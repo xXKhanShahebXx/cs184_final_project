@@ -12,6 +12,7 @@ public:
     Vec3 sampleVelocity(float x, float z) const;
 
     void addImpulse(float x, float z, float du, float dv, float dh);
+    void addRadialImpulse(float x, float z, float radius, float dh, float momentumScale);
 
     int getNx() const { return nx; }
     int getNz() const { return nz; }
@@ -30,13 +31,16 @@ private:
     std::vector<float> h;
     std::vector<float> u;
     std::vector<float> v;
+    std::vector<float> q;
 
     std::vector<float> hTmp;
     std::vector<float> uTmp;
     std::vector<float> vTmp;
+    std::vector<float> qTmp;
 
     float gravity;
     float viscosity;
+    float waveDamping;
 
     int idx(int i, int k) const { return k * nx + i; }
     void applyBoundary();

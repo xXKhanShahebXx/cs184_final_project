@@ -1,4 +1,9 @@
+#include <GL/glew.h>
 #include "Cloth.h"
+#include "Water.h"
+#include "Coupling.h"
+#include "ClothRender.h"
+#include "WaterRenderer.h"
 #include <iostream>
 #include <chrono>
 #include <algorithm>
@@ -18,6 +23,11 @@ Vec3 windVelocity = Vec3(0.0f, 0.0f, 0.0f);
 float windStrength = 2.0f;
 float airDragCoefficient = 0.1f;
 bool windActive = false;
+Vec3 windDir = Vec3(0.0f, 0.0f, 0.0f);
+
+WaterGrid* water = nullptr;
+CouplingParams coupling{ 400.0f, 2.0f, 1.0f };
+WaterRenderer* waterRenderer = nullptr;
 
 void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -27,43 +37,39 @@ void display() {
     glRotatef(cameraAngleX, 1.0f, 0.0f, 0.0f);
     glRotatef(cameraAngleY, 0.0f, 1.0f, 0.0f);
     
-    glBegin(GL_LINES);
-    
-    glColor3f(1.0f, 0.0f, 0.0f);
-    glVertex3f(0.0f, 0.0f, 0.0f);
-    glVertex3f(3.0f, 0.0f, 0.0f);
-    
-    glColor3f(0.0f, 1.0f, 0.0f);
-    glVertex3f(0.0f, 0.0f, 0.0f);
-    glVertex3f(0.0f, 3.0f, 0.0f);
-    
-    glColor3f(0.0f, 0.0f, 1.0f);
-    glVertex3f(0.0f, 0.0f, 0.0f);
-    glVertex3f(0.0f, 0.0f, 3.0f);
-    glEnd();
-    
-    glColor3f(1.0f, 0.0f, 0.0f);
-    glRasterPos3f(3.2f, 0.0f, 0.0f);
-    glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, 'X');
-    
-    glColor3f(0.0f, 1.0f, 0.0f);
-    glRasterPos3f(0.0f, 3.2f, 0.0f);
-    glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, 'Y');
-    
-    glColor3f(0.0f, 0.0f, 1.0f);
-    glRasterPos3f(0.0f, 0.0f, 3.2f);
-    glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, 'Z');
-    
-    if (windActive) {
+    {
+        Vec3 d = windDir;
+        float len = length(d);
+        if (len < 1e-4f) d = Vec3(1.0f, 0.0f, 0.0f); else d = d / len;
+        float axisLen = 3.0f;
+        Vec3 tip = d * axisLen;
+        glDisable(GL_TEXTURE_2D);
+        glLineWidth(3.0f);
+        glColor3f(1.0f, 1.0f, 0.0f);
         glBegin(GL_LINES);
-        glColor3f(1.0f, 1.0f, 0.0f);
         glVertex3f(0.0f, 0.0f, 0.0f);
-        glVertex3f(windVelocity.x * 0.5f, windVelocity.y * 0.5f, windVelocity.z * 0.5f);
+        glVertex3f(tip.x, tip.y, tip.z);
         glEnd();
-        
+        glLineWidth(1.0f);
+
+        Vec3 side = Vec3(-d.z, 0.0f, d.x);
+        float sLen = length(side);
+        if (sLen < 1e-4f) side = Vec3(1.0f, 0.0f, 0.0f); else side = side / sLen;
+        float headLen = 0.35f;
+        float headWidth = 0.20f;
+        Vec3 base = tip - d * headLen;
+        Vec3 left = base + side * headWidth;
+        Vec3 right = base - side * headWidth;
+        glBegin(GL_TRIANGLES);
         glColor3f(1.0f, 1.0f, 0.0f);
-        glRasterPos3f(windVelocity.x * 0.6f, windVelocity.y * 0.6f, windVelocity.z * 0.6f);
+        glVertex3f(tip.x, tip.y, tip.z);
+        glVertex3f(left.x, left.y, left.z);
+        glVertex3f(right.x, right.y, right.z);
+        glEnd();
+
+        glRasterPos3f(tip.x + 0.1f, tip.y + 0.1f, tip.z + 0.1f);
         glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, 'W');
+        glColor3f(1.0f, 1.0f, 1.0f);
     }
     
     {
@@ -71,8 +77,11 @@ void display() {
         int gridW = static_cast<int>(std::sqrt(particles.size()));
         int gridH = gridW;
         
+        glDisable(GL_BLEND);
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, 1);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+        glColor3f(1.0f, 1.0f, 1.0f);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, textureWidth, textureHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, textureData.data());
@@ -99,6 +108,15 @@ void display() {
         }
         glEnd();
         glDisable(GL_TEXTURE_2D);
+    }
+
+    if (waterRenderer && water) {
+        waterRenderer->updateFromWater(*water);
+        float view[16];
+        float proj[16];
+        glGetFloatv(GL_MODELVIEW_MATRIX, view);
+        glGetFloatv(GL_PROJECTION_MATRIX, proj);
+        waterRenderer->draw(view, proj);
     }
 
     glBegin(GL_LINES);
@@ -140,16 +158,15 @@ void generateTexture() {
         for (int x = 0; x < textureWidth; ++x) {
             int index = (y * textureWidth + x) * 3;
             
-            bool checker = ((x / 8) + (y / 8)) % 2 == 0;
-            
+            bool checker = ((x / 6) + (y / 6)) % 2 == 0;
             if (checker) {
-                textureData[index] = 200;
-                textureData[index + 1] = 180;
-                textureData[index + 2] = 160;
-            } else {
-                textureData[index] = 160;
+                textureData[index]     = 240;
                 textureData[index + 1] = 140;
-                textureData[index + 2] = 120;
+                textureData[index + 2] = 0;
+            } else {
+                textureData[index]     = 245;
+                textureData[index + 1] = 245;
+                textureData[index + 2] = 245;
             }
         }
     }
@@ -164,9 +181,28 @@ void update() {
     deltaTime = std::min(deltaTime, 0.016f);
     
     Vec3 gravity(0.0f, -2.0f, 0.0f);
+    {
+        float len = length(windDir);
+        Vec3 dir = (len > 1e-4f) ? (windDir / len) : Vec3(0.0f);
+        windVelocity = dir * windStrength;
+    }
     Vec3 airVel = windActive ? windVelocity : Vec3(0.0f, 0.0f, 0.0f);
-
-    cloth->update(deltaTime, gravity, airDragCoefficient, airVel);
+    cloth->prepareForces();
+    applyWaterToCloth(*water, *cloth, coupling);
+    cloth->applyGravity(gravity);
+    cloth->applyAirDrag(airDragCoefficient, airVel);
+    {
+        auto& pts = cloth->getParticles();
+        for (auto& p : pts) {
+            if (!p.fixed) {
+                p.velocity.x += airVel.x * 0.03f * deltaTime;
+                p.velocity.z += airVel.z * 0.03f * deltaTime;
+            }
+        }
+    }
+    cloth->finalizeIntegration(deltaTime);
+    applyClothToWater(*water, *cloth, coupling, deltaTime);
+    water->step(deltaTime);
 
     if (windActive) {
         static int frameCount = 0;
@@ -201,50 +237,22 @@ void keyboard(unsigned char key, int x, int y) {
         case '-':
             cameraDistance += 0.5f;
             break;
-        case '1':
-            windVelocity = Vec3(windStrength, 0.0f, 0.0f);
-            windActive = true;
-            std::cout << "Wind: X-axis, Strength: " << windStrength << std::endl;
-            break;
-        case '2':
-            windVelocity = Vec3(0.0f, windStrength, 0.0f);
-            windActive = true;
-            std::cout << "Wind: Y-axis, Strength: " << windStrength << std::endl;
-            break;
-        case '3':
-            windVelocity = Vec3(0.0f, 0.0f, windStrength);
-            windActive = true;
-            std::cout << "Wind: +Z axis, Strength: " << windStrength << std::endl;
-            break;
-        case '7':
-            windVelocity = Vec3(-windStrength, 0.0f, 0.0f);
-            windActive = true;
-            std::cout << "Wind: -X axis, Strength: " << windStrength << std::endl;
-            break;
-        case '8':
-            windVelocity = Vec3(0.0f, -windStrength, 0.0f);
-            windActive = true;
-            std::cout << "Wind: -Y axis, Strength: " << windStrength << std::endl;
-            break;
-        case '9':
-            windVelocity = Vec3(0.0f, 0.0f, -windStrength);
-            windActive = true;
-            std::cout << "Wind: -Z axis, Strength: " << windStrength << std::endl;
-            break;
-        case '4':
-            windStrength = std::min(10.0f, windStrength + 1.0f);
-            if (windActive) {
-                windVelocity = windVelocity.normalize() * windStrength;
-                std::cout << "Wind strength increased to: " << windStrength << std::endl;
-            }
-            break;
-        case '5':
-            windStrength = std::max(0.0f, windStrength - 1.0f);
-            if (windActive) {
-                windVelocity = windVelocity.normalize() * windStrength;
-                std::cout << "Wind strength decreased to: " << windStrength << std::endl;
-            }
-            break;
+        case '1': windDir = Vec3(1.0f, 0.0f, 0.0f); windActive = true; break;
+        case '2': windDir = Vec3(0.0f, 1.0f, 0.0f); windActive = true; break;
+        case '3': windDir = Vec3(0.0f, 0.0f, 1.0f); windActive = true; break;
+        case '7': windDir = Vec3(-1.0f, 0.0f, 0.0f); windActive = true; break;
+        case '8': windDir = Vec3(0.0f, -1.0f, 0.0f); windActive = true; break;
+        case '9': windDir = Vec3(0.0f, 0.0f, -1.0f); windActive = true; break;
+        case 'j': windDir.x -= 0.1f; windActive = true; break;
+        case 'l': windDir.x += 0.1f; windActive = true; break;
+        case 'i': windDir.z += 0.1f; windActive = true; break;
+        case 'k': windDir.z -= 0.1f; windActive = true; break;
+        case 'u': windDir.y += 0.1f; windActive = true; break;
+        case 'o': windDir.y -= 0.1f; windActive = true; break;
+        case 'p': windActive = true; break;
+        case 'c': windDir = Vec3(0.0f,0.0f,0.0f); windActive = false; break;
+        case '4': windStrength = std::min(20.0f, windStrength + 1.0f); break;
+        case '5': windStrength = std::max(0.0f, windStrength - 1.0f); break;
         case '0':
             windActive = false;
             std::cout << "Wind turned OFF" << std::endl;
@@ -289,6 +297,11 @@ int main(int argc, char** argv) {
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
     glutInitWindowSize(800, 600);
     glutCreateWindow("Cloth Simulation - Stage 3");
+    glewExperimental = GL_TRUE;
+    if (glewInit() != GLEW_OK) {
+        std::cerr << "Failed to initialize GLEW" << std::endl;
+        return -1;
+    }
     
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
@@ -297,6 +310,8 @@ int main(int argc, char** argv) {
     
     cloth = new Cloth(15, 15, 0.15f);
     cloth->fixCorner(0);
+    water = new WaterGrid(80, 80, 0.12f, Vec3(-4.0f, -1.3f, -4.0f), -0.8f);
+    waterRenderer = new WaterRenderer(80, 80, 0.12f, Vec3(-4.0f, -1.3f, -4.0f), -0.8f, -1.4f);
     
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
@@ -317,5 +332,7 @@ int main(int argc, char** argv) {
     glutMainLoop();
     
     delete cloth;
+    delete waterRenderer;
+    delete water;
     return 0;
 } 

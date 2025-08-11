@@ -44,15 +44,23 @@ void Cloth::createSprings() {
 }
 
 void Cloth::update(float deltaTime, const Vec3& gravity, float dragCoefficient, const Vec3& airVelocity) {
-    for (auto& particle : particles) {
-        particle.force = Vec3(0.0f);
-    }
+    for (auto& particle : particles) particle.force = Vec3(0.0f);
 
     applySpringForces();
 
     applyGravity(gravity);
     applyAirDrag(dragCoefficient, airVelocity);
 
+    integrateVelocities(deltaTime);
+    integratePositions(deltaTime);
+}
+
+void Cloth::prepareForces() {
+    for (auto& particle : particles) particle.force = Vec3(0.0f);
+    applySpringForces();
+}
+
+void Cloth::finalizeIntegration(float deltaTime) {
     integrateVelocities(deltaTime);
     integratePositions(deltaTime);
 }
@@ -75,6 +83,11 @@ void Cloth::applySpringForces() {
             Vec3 dampingForce = direction * dot(relativeVelocity, direction) * spring.damping;
             
             Vec3 totalForce = springForce + dampingForce;
+            float maxForce = 800.0f;
+            float mag = length(totalForce);
+            if (mag > maxForce && mag > 0.0f) {
+                totalForce = totalForce * (maxForce / mag);
+            }
             
             if (!p1.fixed) p1.force += totalForce;
             if (!p2.fixed) p2.force -= totalForce;
@@ -86,6 +99,7 @@ void Cloth::integrateVelocities(float deltaTime) {
     for (auto& particle : particles) {
         if (!particle.fixed) {
             particle.velocity += (particle.force / particle.mass) * deltaTime;
+            particle.velocity = particle.velocity * 0.997f;
         }
     }
 }

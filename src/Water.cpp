@@ -3,9 +3,9 @@
 
 WaterGrid::WaterGrid(int nx, int nz, float dx, const Vec3& origin, float baseLevel)
     : nx(nx), nz(nz), dx(dx), origin(origin), baseLevel(baseLevel),
-      h(nx * nz, baseLevel), u(nx * nz, 0.0f), v(nx * nz, 0.0f),
-      hTmp(nx * nz, baseLevel), uTmp(nx * nz, 0.0f), vTmp(nx * nz, 0.0f),
-      gravity(9.81f), viscosity(0.05f) {}
+      h(nx * nz, baseLevel), u(nx * nz, 0.0f), v(nx * nz, 0.0f), q(nx * nz, 0.0f),
+      hTmp(nx * nz, baseLevel), uTmp(nx * nz, 0.0f), vTmp(nx * nz, 0.0f), qTmp(nx * nz, 0.0f),
+      gravity(9.81f), viscosity(0.05f), waveDamping(0.998f) {}
 
 float WaterGrid::sampleHeight(float x, float z) const {
     float fx = (x - origin.x) / dx;
@@ -32,6 +32,36 @@ void WaterGrid::addImpulse(float x, float z, float du, float dv, float dh) {
     u[id] += du;
     v[id] += dv;
     h[id] += dh;
+}
+
+void WaterGrid::addRadialImpulse(float x, float z, float radius, float dh, float momentumScale) {
+    int iCenter = std::clamp((int)((x - origin.x) / dx), 0, nx - 1);
+    int kCenter = std::clamp((int)((z - origin.z) / dx), 0, nz - 1);
+    int rCells = std::max(1, (int)(radius / dx));
+    for (int dk = -rCells; dk <= rCells; ++dk) {
+        for (int di = -rCells; di <= rCells; ++di) {
+            int i = iCenter + di;
+            int k = kCenter + dk;
+            if (i < 1 || i >= nx - 1 || k < 1 || k >= nz - 1) continue;
+            float dxw = di * dx;
+            float dzw = dk * dx;
+            float dist = std::sqrt(dxw * dxw + dzw * dzw);
+            if (dist <= radius) {
+                float sigma = radius * 0.5f;
+                float w = std::exp(-(dist * dist) / (2.0f * sigma * sigma));
+                float dhLocal = std::max(-0.004f, std::min(0.004f, dh)) * w;
+                int id = idx(i, k);
+                q[id] += dhLocal; // accumulate to source field for smooth injection
+                float dirx = (dist > 1e-5f) ? (dxw / dist) : 0.0f;
+                float dirz = (dist > 1e-5f) ? (dzw / dist) : 0.0f;
+                u[id] += dirx * momentumScale * w * (dhLocal / std::max(radius, 1e-3f));
+                v[id] += dirz * momentumScale * w * (dhLocal / std::max(radius, 1e-3f));
+                float dev = h[id] - baseLevel;
+                if (dev > 0.20f) h[id] = baseLevel + 0.20f;
+                if (dev < -0.20f) h[id] = baseLevel - 0.20f;
+            }
+        }
+    }
 }
 
 void WaterGrid::applyBoundary() {
@@ -98,10 +128,41 @@ void WaterGrid::addHeightDamping(float dt) {
     }
 }
 
+static void smoothHeights(std::vector<float>& h, std::vector<float>& tmp, int nx, int nz, float alpha) {
+    for (int k = 1; k < nz - 1; ++k) {
+        for (int i = 1; i < nx - 1; ++i) {
+            int id = k * nx + i;
+            float lap = h[id - 1] + h[id + 1] + h[id - nx] + h[id + nx] - 4.0f * h[id];
+            tmp[id] = h[id] + alpha * lap;
+        }
+    }
+    for (int k = 1; k < nz - 1; ++k) {
+        for (int i = 1; i < nx - 1; ++i) {
+            int id = k * nx + i;
+            h[id] = tmp[id];
+        }
+    }
+}
+
 void WaterGrid::step(float dt) {
-    diffuse(dt);
-    advect(dt);
-    project(dt);
-    addHeightDamping(dt);
-    applyBoundary();
+    float maxDt = 0.006f;
+    int iters = std::max(1, (int)std::ceil(dt / maxDt));
+    float hdt = dt / iters;
+    for (int it = 0; it < iters; ++it) {
+        diffuse(hdt);
+        advect(hdt);
+        project(hdt);
+        for (int id = 0; id < nx * nz; ++id) {
+            h[id] += q[id] * 0.9f; // inject smoothed source
+            q[id] = 0.0f;
+        }
+        addHeightDamping(hdt);
+        applyBoundary();
+        float maxSpeed = 1.8f;
+        for (int id = 0; id < nx * nz; ++id) {
+            if (u[id] > maxSpeed) u[id] = maxSpeed; else if (u[id] < -maxSpeed) u[id] = -maxSpeed;
+            if (v[id] > maxSpeed) v[id] = maxSpeed; else if (v[id] < -maxSpeed) v[id] = -maxSpeed;
+        }
+        smoothHeights(h, hTmp, nx, nz, 0.02f);
+    }
 }

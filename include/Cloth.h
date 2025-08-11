@@ -34,6 +34,9 @@ public:
     void applyAirDrag(float dragCoefficient, const Vec3& airVelocity);
     void handleCollision(const Vec3& surfaceNormal, float surfaceHeight);
     
+    void prepareForces();
+    void finalizeIntegration(float deltaTime);
+    
     const std::vector<Particle>& getParticles() const { return particles; }
     std::vector<Particle>& getParticles() { return particles; }
     const std::vector<Spring>& getSprings() const { return springs; }
