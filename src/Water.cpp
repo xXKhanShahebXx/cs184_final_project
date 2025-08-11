@@ -51,7 +51,7 @@ void WaterGrid::addRadialImpulse(float x, float z, float radius, float dh, float
                 float w = std::exp(-(dist * dist) / (2.0f * sigma * sigma));
                 float dhLocal = std::max(-0.004f, std::min(0.004f, dh)) * w;
                 int id = idx(i, k);
-                q[id] += dhLocal; // accumulate to source field for smooth injection
+                q[id] += dhLocal;
                 float dirx = (dist > 1e-5f) ? (dxw / dist) : 0.0f;
                 float dirz = (dist > 1e-5f) ? (dzw / dist) : 0.0f;
                 u[id] += dirx * momentumScale * w * (dhLocal / std::max(radius, 1e-3f));
@@ -153,7 +153,7 @@ void WaterGrid::step(float dt) {
         advect(hdt);
         project(hdt);
         for (int id = 0; id < nx * nz; ++id) {
-            h[id] += q[id] * 0.9f; // inject smoothed source
+            h[id] += q[id] * 0.9f;
             q[id] = 0.0f;
         }
         addHeightDamping(hdt);

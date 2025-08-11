@@ -20,9 +20,8 @@ int textureWidth = 64;
 int textureHeight = 64;
 
 Vec3 windVelocity = Vec3(0.0f, 0.0f, 0.0f);
-float windStrength = 2.0f;
+float windStrength = 0.0f;
 float airDragCoefficient = 0.1f;
-bool windActive = false;
 Vec3 windDir = Vec3(0.0f, 0.0f, 0.0f);
 
 WaterGrid* water = nullptr;
@@ -183,10 +182,11 @@ void update() {
     Vec3 gravity(0.0f, -2.0f, 0.0f);
     {
         float len = length(windDir);
-        Vec3 dir = (len > 1e-4f) ? (windDir / len) : Vec3(0.0f);
+        Vec3 dir = (len > 1e-4f) ? (windDir / len) : Vec3(1.0f, 0.0f, 0.0f);
         windVelocity = dir * windStrength;
     }
-    Vec3 airVel = windActive ? windVelocity : Vec3(0.0f, 0.0f, 0.0f);
+    bool windOn = (windStrength > 0.0f);
+    Vec3 airVel = windOn ? windVelocity : Vec3(0.0f, 0.0f, 0.0f);
     cloth->prepareForces();
     applyWaterToCloth(*water, *cloth, coupling);
     cloth->applyGravity(gravity);
@@ -204,7 +204,7 @@ void update() {
     applyClothToWater(*water, *cloth, coupling, deltaTime);
     water->step(deltaTime);
 
-    if (windActive) {
+    if (windOn) {
         static int frameCount = 0;
         if (frameCount++ % 60 == 0) {
             std::cout << "Wind active: " << airVel.x << ", " << airVel.y << ", " << airVel.z << std::endl;
@@ -237,32 +237,27 @@ void keyboard(unsigned char key, int x, int y) {
         case '-':
             cameraDistance += 0.5f;
             break;
-        case '1': windDir = Vec3(1.0f, 0.0f, 0.0f); windActive = true; break;
-        case '2': windDir = Vec3(0.0f, 1.0f, 0.0f); windActive = true; break;
-        case '3': windDir = Vec3(0.0f, 0.0f, 1.0f); windActive = true; break;
-        case '7': windDir = Vec3(-1.0f, 0.0f, 0.0f); windActive = true; break;
-        case '8': windDir = Vec3(0.0f, -1.0f, 0.0f); windActive = true; break;
-        case '9': windDir = Vec3(0.0f, 0.0f, -1.0f); windActive = true; break;
-        case 'j': windDir.x -= 0.1f; windActive = true; break;
-        case 'l': windDir.x += 0.1f; windActive = true; break;
-        case 'i': windDir.z += 0.1f; windActive = true; break;
-        case 'k': windDir.z -= 0.1f; windActive = true; break;
-        case 'u': windDir.y += 0.1f; windActive = true; break;
-        case 'o': windDir.y -= 0.1f; windActive = true; break;
-        case 'p': windActive = true; break;
-        case 'c': windDir = Vec3(0.0f,0.0f,0.0f); windActive = false; break;
-        case '4': windStrength = std::min(20.0f, windStrength + 1.0f); break;
+        case '1': windDir = Vec3(1.0f, 0.0f, 0.0f); break;
+        case '2': windDir = Vec3(0.0f, 1.0f, 0.0f); break;
+        case '3': windDir = Vec3(0.0f, 0.0f, 1.0f); break;
+        case '7': windDir = Vec3(-1.0f, 0.0f, 0.0f); break;
+        case '8': windDir = Vec3(0.0f, -1.0f, 0.0f); break;
+        case '9': windDir = Vec3(0.0f, 0.0f, -1.0f); break;
+        case 'j': windDir.x -= 0.1f; break;
+        case 'l': windDir.x += 0.1f; break;
+        case 'i': windDir.z += 0.1f; break;
+        case 'k': windDir.z -= 0.1f; break;
+        case 'u': windDir.y += 0.1f; break;
+        case 'o': windDir.y -= 0.1f; break;
+        case 'c': windStrength = 0.0f; break;
+        case '4': windStrength = std::min(20.0f, windStrength + 1.0f); if (length(windDir) <= 1e-4f) windDir = Vec3(1.0f,0.0f,0.0f); break;
         case '5': windStrength = std::max(0.0f, windStrength - 1.0f); break;
-        case '0':
-            windActive = false;
-            std::cout << "Wind turned OFF" << std::endl;
-            break;
         case 'r':
             delete cloth;
             cloth = new Cloth(15, 15, 0.15f);
             cloth->fixCorner(0);
-            windActive = false;
-            windStrength = 2.0f;
+            windDir = Vec3(0.0f, 0.0f, 0.0f);
+            windStrength = 0.0f;
             std::cout << "Cloth reset to original position with fixed corner" << std::endl;
             break;
     }
@@ -288,8 +283,8 @@ int main(int argc, char** argv) {
     std::cout << "  Wind Controls:" << std::endl;
     std::cout << "    1/2/3 - Wind +X/+Y/+Z" << std::endl;
     std::cout << "    7/8/9 - Wind -X/-Y/-Z" << std::endl;
-    std::cout << "    4/5 - Increase/decrease wind strength" << std::endl;
-    std::cout << "    0 - Turn wind off" << std::endl;
+    std::cout << "    4/5 - Increase/decrease wind strength (wind active only if strength > 0)" << std::endl;
+    std::cout << "    C - Clear wind (strength = 0)" << std::endl;
     std::cout << "    R - Reset cloth" << std::endl;
     std::cout << std::endl;
     
@@ -327,7 +322,7 @@ int main(int argc, char** argv) {
     std::cout << "  Green axis (Y) = Up/Down" << std::endl;
     std::cout << "  Blue axis (Z) = Forward/Backward" << std::endl;
     std::cout << "  Yellow arrow (W) = Wind direction" << std::endl;
-    std::cout << "Press 1/2/3 to activate wind in different directions!" << std::endl;
+    std::cout << "Press 1/2/3 to set wind direction. Wind applies only when strength > 0 (press 4)." << std::endl;
     
     glutMainLoop();
     
