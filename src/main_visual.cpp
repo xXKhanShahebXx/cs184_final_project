@@ -28,6 +28,12 @@ WaterGrid* water = nullptr;
 CouplingParams coupling{ 400.0f, 2.0f, 1.0f };
 WaterRenderer* waterRenderer = nullptr;
 
+GLfloat light_position[] = { 1.0f, 10.0f, 1.0f, 1.0f };
+GLfloat light_ambient[]  = { 0.9f, 0.9f, 0.9f, 1.0f };
+GLfloat light_diffuse[]  = { 1.0f, 1.0f, 1.0f, 1.0f };
+GLfloat light_specular[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+
 void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glLoadIdentity();
@@ -35,6 +41,11 @@ void display() {
     glTranslatef(0.0f, -2.0f, -cameraDistance);
     glRotatef(cameraAngleX, 1.0f, 0.0f, 0.0f);
     glRotatef(cameraAngleY, 0.0f, 1.0f, 0.0f);
+
+    glLightfv(GL_LIGHT0, GL_POSITION, light_position);
+
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
     
     {
         Vec3 d = windDir;
@@ -72,41 +83,71 @@ void display() {
     }
     
     {
-        const auto& particles = cloth->getParticles();
+        auto& particles = cloth->getParticles();
         int gridW = static_cast<int>(std::sqrt(particles.size()));
         int gridH = gridW;
         
         glDisable(GL_BLEND);
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, 1);
-        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+        GLfloat cloth_ambient[]   = { 0.3f, 0.3f, 0.3f, 1.0f };
+        GLfloat cloth_diffuse[]   = { 0.7f, 0.7f, 0.7f, 1.0f }; 
+        GLfloat cloth_specular[]  = { 0.1f, 0.1f, 0.1f, 1.0f }; 
+        GLfloat cloth_shininess[] = { 8.0f };              
+        
+        glMaterialfv(GL_FRONT, GL_AMBIENT,   cloth_ambient);
+        glMaterialfv(GL_FRONT, GL_DIFFUSE,   cloth_diffuse);
+        glMaterialfv(GL_FRONT, GL_SPECULAR,  cloth_specular);
+        glMaterialfv(GL_FRONT, GL_SHININESS, cloth_shininess);
+
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, 1);
+        // MODULATE combines the texture color with the light color
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
         glColor3f(1.0f, 1.0f, 1.0f);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, textureWidth, textureHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, textureData.data());
+
         
-        glBegin(GL_QUADS);
+        cloth->calculateNormals();
+        
+        glBegin(GL_TRIANGLES);
         for (int y = 0; y < gridH - 1; ++y) {
             for (int x = 0; x < gridW - 1; ++x) {
-                int idx = y * gridW + x;
-                const Vec3& p1 = particles[idx].position;
-                const Vec3& p2 = particles[idx + 1].position;
-                const Vec3& p3 = particles[idx + 1 + gridW].position;
-                const Vec3& p4 = particles[idx + gridW].position;
+                const auto& p1 = particles[y * gridW + x];
+                const auto& p2 = particles[y * gridW + x + 1];
+                const auto& p3 = particles[(y + 1) * gridW + x + 1];
+                const auto& p4 = particles[(y + 1) * gridW + x];
                 
                 float u1 = static_cast<float>(x) / (gridW - 1);
                 float v1 = static_cast<float>(y) / (gridH - 1);
                 float u2 = static_cast<float>(x + 1) / (gridW - 1);
                 float v2 = static_cast<float>(y + 1) / (gridH - 1);
+
+                // Triangle 1 (p1, p2, p3)
+                glNormal3f(p1.normal.x, p1.normal.y, p1.normal.z);
+                glTexCoord2f(u1, v1); glVertex3f(p1.position.x, p1.position.y, p1.position.z);
                 
-                glTexCoord2f(u1, v1); glVertex3f(p1.x, p1.y, p1.z);
-                glTexCoord2f(u2, v1); glVertex3f(p2.x, p2.y, p2.z);
-                glTexCoord2f(u2, v2); glVertex3f(p3.x, p3.y, p3.z);
-                glTexCoord2f(u1, v2); glVertex3f(p4.x, p4.y, p4.z);
+                glNormal3f(p2.normal.x, p2.normal.y, p2.normal.z);
+                glTexCoord2f(u2, v1); glVertex3f(p2.position.x, p2.position.y, p2.position.z);
+                
+                glNormal3f(p3.normal.x, p3.normal.y, p3.normal.z);
+                glTexCoord2f(u2, v2); glVertex3f(p3.position.x, p3.position.y, p3.position.z);
+
+                // Triangle 2 (p1, p3, p4)
+                glNormal3f(p1.normal.x, p1.normal.y, p1.normal.z);
+                glTexCoord2f(u1, v1); glVertex3f(p1.position.x, p1.position.y, p1.position.z);
+
+                glNormal3f(p3.normal.x, p3.normal.y, p3.normal.z);
+                glTexCoord2f(u2, v2); glVertex3f(p3.position.x, p3.position.y, p3.position.z);
+
+                glNormal3f(p4.normal.x, p4.normal.y, p4.normal.z);
+                glTexCoord2f(u1, v2); glVertex3f(p4.position.x, p4.position.y, p4.position.z);
             }
-        }
-        glEnd();
-        glDisable(GL_TEXTURE_2D);
+        }   
+                glEnd();
+                glDisable(GL_TEXTURE_2D);
     }
 
     if (waterRenderer && water) {
@@ -300,6 +341,13 @@ int main(int argc, char** argv) {
     
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+
+    glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular);
+    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
+    glEnable(GL_NORMALIZE);
+
     
     generateTexture();
     

@@ -1,5 +1,6 @@
 #include "Cloth.h"
 #include <cmath>
+#include "SimpleMath.h"
 
 Cloth::Cloth(int width, int height, float spacing) : windVelocity(Vec3(0.0f)) {
     particles.reserve(width * height);
@@ -12,6 +13,44 @@ Cloth::Cloth(int width, int height, float spacing) : windVelocity(Vec3(0.0f)) {
     }
     
     createSprings();
+}
+
+void Cloth::calculateNormals() {
+    // Reset all normals
+    for (auto& p : particles) {
+        p.normal = Vec3(0.0f);
+    }
+
+    int width = static_cast<int>(sqrt(particles.size()));
+    int height = width;
+
+    // Calculate face normals and add them to the vertices
+    for (int y = 0; y < height - 1; ++y) {
+        for (int x = 0; x < width - 1; ++x) {
+            Particle& p1 = particles[y * width + x];
+            Particle& p2 = particles[y * width + x + 1];
+            Particle& p3 = particles[(y + 1) * width + x + 1];
+            Particle& p4 = particles[(y + 1) * width + x];
+
+            // Calculate normals for the two triangles that form the quad: (p1, p2, p3) and (p1, p3, p4)
+            //Vec3 normal1 = cross(p2.position - p1.position, p3.position - p1.position);
+            Vec3 normal1 = (p2.position - p1.position).cross(p3.position - p1.position);
+            p1.normal += normal1;
+            p2.normal += normal1;
+            p3.normal += normal1;
+
+            //Vec3 normal2 = cross(p3.position - p1.position, p4.position - p1.position);
+            Vec3 normal2 = (p3.position - p1.position).cross(p4.position - p1.position);
+            p1.normal += normal2;
+            p3.normal += normal2;
+            p4.normal += normal2;
+        }
+    }
+
+    // Normalize all the vertex normals for smooth shading
+    for (auto& p : particles) {
+        p.normal = normalize(p.normal);
+    }
 }
 
 void Cloth::createSprings() {

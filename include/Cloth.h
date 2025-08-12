@@ -6,6 +6,7 @@ struct Particle {
     Vec3 position;
     Vec3 velocity;
     Vec3 force;
+    Vec3 normal;
     float mass;
     bool fixed;
     
@@ -33,6 +34,8 @@ public:
     void applyGravity(const Vec3& gravity);
     void applyAirDrag(float dragCoefficient, const Vec3& airVelocity);
     void handleCollision(const Vec3& surfaceNormal, float surfaceHeight);
+
+    void calculateNormals();
     
     void prepareForces();
     void finalizeIntegration(float deltaTime);

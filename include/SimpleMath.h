@@ -12,6 +12,13 @@ struct Vec3 { float x, y, z; Vec3():x(0),y(0),z(0){} Vec3(float x,float y,float 
     float length() const { return std::sqrt(x*x+y*y+z*z); }
     Vec3 normalize() const { float l=length(); return l>0?(*this)/l:Vec3(); }
     float dot(const Vec3& o) const { return x*o.x+y*o.y+z*o.z; }
+    Vec3 cross(const Vec3& o) const {
+        return Vec3(
+            y * o.z - z * o.y,
+            z * o.x - x * o.z,
+            x * o.y - y * o.x
+        );
+    }
 };
 inline Vec3 operator*(float s,const Vec3& v){ return v*s; }
 inline float length(const Vec3& v){ return v.length(); }
