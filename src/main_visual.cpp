@@ -15,6 +15,8 @@ float cameraDistance = 10.0f;
 float cameraAngleX = 30.0f;
 float cameraAngleY = 0.0f;
 
+bool debug = true;
+
 std::vector<unsigned char> textureData;
 int textureWidth = 64;
 int textureHeight = 64;
@@ -29,7 +31,7 @@ CouplingParams coupling{ 400.0f, 2.0f, 1.0f };
 WaterRenderer* waterRenderer = nullptr;
 
 GLfloat light_position[] = { 1.0f, 10.0f, 1.0f, 1.0f };
-GLfloat light_ambient[]  = { 0.9f, 0.9f, 0.9f, 1.0f };
+GLfloat light_ambient[]  = { 0.6f, 0.6f, 0.6f, 1.0f };
 GLfloat light_diffuse[]  = { 1.0f, 1.0f, 1.0f, 1.0f };
 GLfloat light_specular[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 
@@ -159,7 +161,7 @@ void display() {
         waterRenderer->draw(view, proj);
     }
 
-    glBegin(GL_LINES);
+    //glBegin(GL_LINES);
     glColor3f(0.8f, 0.8f, 0.8f);
     
     const auto& springs = cloth->getSprings();
@@ -191,7 +193,7 @@ void display() {
     glutSwapBuffers();
 }
 
-void generateTexture() {
+void generateDebugTexture() {
     textureData.resize(textureWidth * textureHeight * 3);
     
     for (int y = 0; y < textureHeight; ++y) {
@@ -210,6 +212,26 @@ void generateTexture() {
             }
         }
     }
+}
+
+void generateTexture() {
+    textureData.resize(textureWidth * textureHeight * 3);
+
+    if (debug) {
+        generateDebugTexture();
+    }
+
+    else {
+        for (int y = 0; y < textureHeight; ++y) {
+        for (int x = 0; x < textureWidth; ++x) {
+            int index = (y * textureWidth + x) * 3;
+            textureData[index]     = 210;
+            textureData[index + 1] = 180;
+            textureData[index + 2] = 140;
+        }
+    }
+    }
+        
 }
 
 void update() {
@@ -278,6 +300,14 @@ void keyboard(unsigned char key, int x, int y) {
         case '-':
             cameraDistance += 0.5f;
             break;
+        case '`':
+            if (debug) {
+                debug = false;
+            } else {
+                debug = true;
+            }
+            generateTexture();
+
         case '1': windDir = Vec3(1.0f, 0.0f, 0.0f); break;
         case '2': windDir = Vec3(0.0f, 1.0f, 0.0f); break;
         case '3': windDir = Vec3(0.0f, 0.0f, 1.0f); break;
