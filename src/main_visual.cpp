@@ -325,7 +325,7 @@ void keyboard(unsigned char key, int x, int y) {
         case '5': windStrength = std::max(0.0f, windStrength - 1.0f); break;
         case 'r':
             delete cloth;
-            cloth = new Cloth(15, 15, 0.15f);
+            cloth = new Cloth(7.5, 7.5, 0.3f);
             cloth->fixCorner(0);
             windDir = Vec3(0.0f, 0.0f, 0.0f);
             windStrength = 0.0f;

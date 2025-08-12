@@ -203,3 +203,5 @@ void Cloth::setInitialVelocity(const Vec3& velocity) {
         }
     }
 } 
+
+
